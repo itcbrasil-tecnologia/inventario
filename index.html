@@ -258,7 +258,7 @@
                 list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-CONTABIL`, `${locationId}-ADV`);
             } else if (locationId === 'CODHAB01') {
                 for (let i = 1; i <= 8; i++) list.push(`${locationId}-PA${String(i).padStart(2, '0')}`);
-                list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-GESTAO`); // CORREÇÃO: Removido o til
+                list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-GESTAO`);
             }
             return list;
         }
@@ -445,6 +445,7 @@
             }
         }
 
+        // CORREÇÃO: Função de notificação do Telegram ajustada para formatação correta.
         async function sendTelegramNotification(location, technician, timestamp, scannedCount, missingItems) {
             if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === 'SEU_TOKEN_AQUI' || !TELEGRAM_CHAT_ID || TELEGRAM_CHAT_ID === 'SEU_CHAT_ID_AQUI') {
                 console.warn("Token do Bot ou Chat ID do Telegram não configurados. Mensagem não enviada.");
@@ -452,26 +453,24 @@
             }
             
             const formattedTimestamp = timestamp.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-            let messageText = `*Resumo da Conferência*\n\n`;
-            messageText += `*Local:* \`${location}\`\n`;
-            messageText += `*Técnico:* \`${technician}\`\n`;
-            messageText += `*Data:* \`${formattedTimestamp}\`\n\n`;
-            messageText += `*Escaneados:* ${scannedCount}\n`;
-            messageText += `*Faltantes:* ${missingItems.length}\n\n`;
+            
+            // Constrói a mensagem sem escapar os caracteres de formatação
+            let messageText = `*Resumo da Conferência*\n\n` +
+                              `*Local:* \`${location}\`\n` +
+                              `*Técnico:* \`${technician}\`\n` +
+                              `*Data:* \`${formattedTimestamp}\`\n\n` +
+                              `*Escaneados:* ${scannedCount}\n` +
+                              `*Faltantes:* ${missingItems.length}\n\n`;
             
             if (missingItems.length > 0) {
-                messageText += `*Itens Não Escaneados:*\n`;
-                messageText += "```\n";
-                missingItems.forEach(item => {
-                    messageText += `- ${item}\n`;
-                });
-                messageText += "```";
+                messageText += `*Itens Não Escaneados:*\n` +
+                               "```\n" +
+                               missingItems.join('\n') + // Usar join é mais limpo
+                               "\n```";
             } else {
-                messageText += `✅ *Nenhum item faltante\\!*`;
+                // O caractere '!' precisa ser escapado no modo MarkdownV2
+                messageText += `✅ Nenhum item faltante\\!`;
             }
-
-            const escapeMarkdown = (text) => text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
-            const finalMessage = escapeMarkdown(messageText);
 
             const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
@@ -481,18 +480,20 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         chat_id: TELEGRAM_CHAT_ID,
-                        text: finalMessage,
-                        parse_mode: 'MarkdownV2'
+                        text: messageText,
+                        parse_mode: 'MarkdownV2' // Telegram interpreta os caracteres de formatação
                     })
                 });
                 const result = await response.json();
                 if (!result.ok) {
-                    console.error("Erro ao enviar mensagem para o Telegram:", result.description);
+                    console.error("Erro ao enviar mensagem para o Telegram:", result);
+                    showFeedback('Erro ao notificar Telegram.', 'error');
                 } else {
                     console.log("Mensagem enviada para o Telegram com sucesso.");
                 }
             } catch (error) {
                 console.error("Falha na requisição para o Telegram:", error);
+                showFeedback('Falha de rede ao notificar.', 'error');
             }
         }
 
