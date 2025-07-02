@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de QR Codes - Todos os Locais</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .qr-code-print-image {
+            display: none;
+        }
+
+        @media print {
+            .no-print {
+                display: none;
+            }
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .qr-code-item {
+                page-break-inside: avoid;
+                border: 1px solid #ccc;
+                padding: 0.5rem;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            .item-name {
+                font-size: 12px;
+                font-weight: bold;
+                text-align: center;
+                padding: 4px;
+                width: 100%;
+            }
+            .canvas-container {
+                display: none !important;
+            }
+            .qr-code-print-image {
+                display: block !important;
+                width: 100px;
+                height: 100px;
+                margin: 5px auto 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100">
+
+    <div class="container mx-auto p-8">
+        <div class="text-center bg-white p-6 rounded-lg shadow-md mb-8 no-print">
+            <h1 class="text-3xl font-bold">Gerador de QR Codes</h1>
+            <p class="text-slate-600 mt-2">Todas as etiquetas para todos os locais foram geradas. Clique no botão para imprimir.</p>
+            <button id="print-button" class="mt-4 bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors" disabled>
+                Gerando QR Codes...
+            </button>
+        </div>
+
+        <div id="qrcode-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <!-- Itens de QR Code serão gerados aqui -->
+        </div>
+    </div>
+    
+    <script>
+        function initializeGenerator() {
+            const container = document.getElementById('qrcode-container');
+            const printButton = document.getElementById('print-button');
+            
+            if (!container || !printButton || container.dataset.initialized) {
+                return; 
+            }
+            container.dataset.initialized = 'true';
+
+            // Lista completa de todos os equipamentos
+            const itemNames = [];
+            const locations = ['BSBIA01', 'BSBIA02', 'BSBIA03', 'BSBIA04'];
+            locations.forEach(loc => {
+                for (let i = 1; i <= 100; i++) {
+                    itemNames.push(`${loc}-EST${String(i).padStart(2, '0')}`);
+                }
+                for (let i = 1; i <= 5; i++) {
+                    itemNames.push(`${loc}-PROF${String(i).padStart(2, '0')}`);
+                }
+            });
+
+            const spvLocations = ['SPV01', 'SPV02'];
+            spvLocations.forEach(loc => {
+                for (let i = 1; i <= 8; i++) {
+                    itemNames.push(`${loc}-EST${String(i).padStart(2, '0')}`);
+                }
+                itemNames.push(`${loc}-REC01`, `${loc}-REC02`, `${loc}-CONTABIL`, `${loc}-ADV`);
+            });
+            
+            const codhabLocation = 'CODHAB01';
+            for (let i = 1; i <= 8; i++) {
+                itemNames.push(`${codhabLocation}-PA${String(i).padStart(2, '0')}`);
+            }
+            itemNames.push(`${codhabLocation}-REC01`, `${codhabLocation}-REC02`, `${codhabLocation}-GESTÃO`);
+
+            let generatedCount = 0;
+            const totalItems = itemNames.length;
+
+            itemNames.forEach(name => {
+                const itemWrapper = document.createElement('div');
+                itemWrapper.className = 'bg-white p-2 rounded-lg shadow-sm flex flex-col gap-1 border qr-code-item';
+
+                const nameDisplay = document.createElement('p');
+                nameDisplay.textContent = name;
+                nameDisplay.className = 'item-name text-center font-semibold';
+
+                const canvasWrapper = document.createElement('div');
+                canvasWrapper.className = 'mx-auto no-print canvas-container';
+                const canvas = document.createElement('canvas');
+                canvas.width = 120;
+                canvas.height = 120;
+                canvasWrapper.appendChild(canvas);
+
+                const printImage = document.createElement('img');
+                printImage.className = 'qr-code-print-image';
+
+                // Gera o QR Code para a imagem de impressão
+                QRCode.toDataURL(name, { errorCorrectionLevel: 'H', width: 256, margin: 2 }, (error, url) => {
+                    if (error) {
+                        console.error(`Falha ao gerar QR Code para ${name}:`, error);
+                    } else {
+                        printImage.src = url;
+                    }
+                    
+                    // Incrementa o contador e atualiza o texto do botão
+                    generatedCount++;
+                    printButton.textContent = `Gerando QR Codes... (${generatedCount}/${totalItems})`;
+
+                    // Verifica se todos foram processados
+                    if (generatedCount === totalItems) {
+                        console.log("Todos os QR Codes foram processados.");
+                        printButton.disabled = false;
+                        printButton.textContent = 'Imprimir QR Codes';
+                        printButton.addEventListener('click', () => {
+                            window.print();
+                        });
+                    }
+                });
+
+                // Gera o QR Code para o canvas de visualização na tela
+                QRCode.toCanvas(canvas, name, { width: 120, margin: 2 });
+                
+                itemWrapper.appendChild(nameDisplay);
+                itemWrapper.appendChild(canvasWrapper);
+                itemWrapper.appendChild(printImage);
+                container.appendChild(itemWrapper);
+            });
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" onload="initializeGenerator()"></script>
+</body>
+</html>
