@@ -69,7 +69,7 @@
         </div>
     </div>
 
-    <!-- NOVO: Modal de Resumo/Recibo -->
+    <!-- Modal de Resumo/Recibo -->
     <div id="summary-modal" class="fixed inset-0 z-40 items-center justify-center hidden modal-overlay">
         <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md m-auto">
             <h2 class="text-2xl font-bold text-center text-slate-900 border-b pb-2">Resumo da Conferência</h2>
@@ -210,7 +210,6 @@
         const closedNotice = document.getElementById('closed-notice');
         const selectorsContainer = document.getElementById('selectors-container');
         const actionButtons = document.getElementById('action-buttons');
-        // NOVO: Elementos do modal de resumo
         const summaryModal = document.getElementById('summary-modal');
         const closeSummaryButton = document.getElementById('close-summary-button');
 
@@ -288,7 +287,6 @@
                 actionButtons.classList.add('hidden');
                 closedNotice.classList.remove('hidden');
             } else {
-                // Habilita a UI se não estiver fechada e se as seleções estiverem feitas
                 const selectionsMade = selectedLocationId && selectedTechnicianName;
                 mainContent.classList.toggle('disabled', !selectionsMade);
                 selectorsContainer.classList.remove('disabled');
@@ -417,7 +415,6 @@
             try {
                 await setDoc(docRef, { isClosed: true }, { merge: true });
                 
-                // Preenche o modal de resumo
                 document.getElementById('summary-location').textContent = locationName;
                 document.getElementById('summary-technician').textContent = selectedTechnicianName;
                 document.getElementById('summary-timestamp').textContent = finalizationTimestamp.toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'medium' });
@@ -463,7 +460,16 @@
         function checkSelections() {
             selectedLocationId = locationSelector.value;
             selectedTechnicianName = technicianSelector.value;
+            
             if (selectedLocationId && selectedTechnicianName) {
+                const selectedLocation = LOCATIONS.find(l => l.id === selectedLocationId);
+                mainTitle.textContent = `Inventário - ${selectedLocation.name}`;
+                
+                // CORREÇÃO: A lógica para gerar a lista e atualizar a UI foi restaurada aqui.
+                masterNotebookList = generateNotebookListForLocation(selectedLocationId);
+                TOTAL_NOTEBOOKS = masterNotebookList.length;
+                updateUI(); // Atualiza a UI com a nova lista mestra
+                
                 mainContent.classList.remove('disabled');
                 setupRealtimeListener(selectedLocationId);
             } else {
