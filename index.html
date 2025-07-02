@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventário de Notebooks com QR Code</title>
+    <title>Inventário com Seleção de Local</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
@@ -45,6 +45,10 @@
             color: white !important;
             transform: scale(1.05);
         }
+        #main-content.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -53,13 +57,29 @@
 
         <!-- Header -->
         <header class="text-center mb-6">
-            <h1 class="text-3xl font-bold text-slate-900">Inventário de Notebooks</h1>
-            <p class="text-slate-600 mt-1">Escaneie o QR Code de cada notebook para fazer a contagem.</p>
+            <h1 id="main-title" class="text-3xl font-bold text-slate-900">Inventário de Notebooks</h1>
+            <p class="text-slate-600 mt-1">Primeiro, selecione o local e o técnico para iniciar a conferência.</p>
         </header>
 
-        <!-- Scanner and Status Section -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Selectors & Clock -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6 space-y-4">
+            <div>
+                <label for="location-selector" class="block text-sm font-medium text-gray-700">Local da Conferência</label>
+                <select id="location-selector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    <option value="">-- Selecione um local --</option>
+                </select>
+            </div>
+            <div>
+                <label for="technician-selector" class="block text-sm font-medium text-gray-700">Técnico Responsável</label>
+                <select id="technician-selector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    <option value="">-- Selecione um técnico --</option>
+                </select>
+            </div>
+            <p id="live-clock" class="text-center text-sm text-slate-500 pt-2 font-semibold"></p>
+        </div>
 
+        <!-- Main Content (Scanner and Status) -->
+        <div id="main-content" class="grid grid-cols-1 md:grid-cols-2 gap-6 disabled">
             <!-- Left Column: Scanner -->
             <div class="bg-white p-6 rounded-lg shadow-md">
                 <h2 class="text-xl font-bold mb-4">Escanear QR Code</h2>
@@ -69,58 +89,68 @@
                 </div>
                 <div class="mt-4 text-center">
                     <button id="reset-button" class="bg-red-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-700 transition-colors">
-                        Reiniciar Contagem do Dia
+                        Reiniciar Contagem
                     </button>
                 </div>
             </div>
 
             <!-- Right Column: Status Lists -->
             <div class="bg-white p-6 rounded-lg shadow-md">
-                <!-- Counters -->
                 <div class="grid grid-cols-2 gap-4 mb-4 text-center">
                     <div>
-                        <p class="text-sm text-slate-500">ESCANEDADOS</p>
+                        <p class="text-sm text-slate-500">ESCANEADOS</p>
                         <p id="scanned-count" class="text-4xl font-bold text-green-600">0</p>
                     </div>
                     <div>
                         <p class="text-sm text-slate-500">FALTANDO</p>
-                        <p id="missing-count" class="text-4xl font-bold text-red-600">100</p>
+                        <p id="missing-count" class="text-4xl font-bold text-red-600">0</p>
                     </div>
                 </div>
-
-                <!-- Lists -->
                 <div class="grid grid-cols-1 gap-4">
-                    <!-- Missing List -->
                     <div>
-                        <h3 class="font-bold mb-2 text-red-700">Faltando (<span id="missing-list-count">100</span>)</h3>
-                        <div id="missing-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border">
-                            <!-- Missing items will be populated here -->
-                        </div>
+                        <h3 class="font-bold mb-2 text-red-700">Faltando (<span id="missing-list-count">0</span>)</h3>
+                        <div id="missing-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border"></div>
                     </div>
-                    <!-- Scanned List -->
                     <div>
                         <h3 class="font-bold mb-2 text-green-700">Escaneados (<span id="scanned-list-count">0</span>)</h3>
-                        <div id="scanned-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border">
-                            <!-- Scanned items will be populated here -->
-                        </div>
+                        <div id="scanned-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border"></div>
                     </div>
                 </div>
             </div>
         </div>
-
     </div>
 
     <script type="module">
-        // Firebase v11.6.1
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIGURAÇÃO ---
-        const TOTAL_NOTEBOOKS = 100;
-        const QR_PREFIX = 'notebook-inv-';
+        const LOCATIONS = [
+            { id: 'BSBIA01', name: 'BSBIA01' },
+            { id: 'BSBIA02', name: 'BSBIA02' },
+            { id: 'BSBIA03', name: 'BSBIA03' },
+            { id: 'BSBIA04', name: 'BSBIA04' },
+            { id: 'SPV01', name: 'SPV01' },
+            { id: 'SPV02', name: 'SPV02' },
+            { id: 'CODHAB01', name: 'CODHAB01' }
+        ];
+        
+        const TECHNICIANS = [
+            'João Marcos',
+            'José Frederico',
+            'Lucas Andrade',
+            'Lucas Veras',
+            'Mateus Fernandes',
+            'Matheus Santos',
+            'Paulo Henrique'
+        ];
         
         // --- ELEMENTOS DA UI ---
+        const locationSelector = document.getElementById('location-selector');
+        const technicianSelector = document.getElementById('technician-selector');
+        const mainContent = document.getElementById('main-content');
+        const mainTitle = document.getElementById('main-title');
         const scannedCountEl = document.getElementById('scanned-count');
         const missingCountEl = document.getElementById('missing-count');
         const scannedListEl = document.getElementById('scanned-list');
@@ -129,39 +159,67 @@
         const missingListCountEl = document.getElementById('missing-list-count');
         const scanResultEl = document.getElementById('scan-result');
         const resetButton = document.getElementById('reset-button');
+        const clockEl = document.getElementById('live-clock');
 
         // --- ESTADO DA APLICAÇÃO ---
+        let scannedEntries = [];
+        let selectedLocationId = null;
+        let selectedTechnicianName = null;
         let masterNotebookList = [];
-        for (let i = 1; i <= TOTAL_NOTEBOOKS; i++) {
-            masterNotebookList.push(`${QR_PREFIX}${i}`);
-        }
-        let scannedItems = new Set();
+        let TOTAL_NOTEBOOKS = 0;
         let db, auth, userId, unsubscribe;
         let isAuthReady = false;
 
         // --- INICIALIZAÇÃO DO FIREBASE ---
-        // CORREÇÃO: Removido '...' que causava erro de sintaxe.
-       const firebaseConfig = {
-  apiKey: "AIzaSyADiMqW9aC2rpFD2jIbufwcV2mCwPk0vWU",
-  authDomain: "itcbrasil-b45c6.firebaseapp.com",
-  projectId: "itcbrasil-b45c6",
-  storageBucket: "itcbrasil-b45c6.firebasestorage.app",
-  messagingSenderId: "544074200281",
-  appId: "1:544074200281:web:7502259d58e49a60483ac8"
-};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
+        // ALTERAÇÃO: Configuração do Firebase inserida diretamente.
+        const firebaseConfig = {
+            apiKey: "AIzaSyADiMqW9aC2rpFD2jIbufwcV2mCwPk0vWU",
+            authDomain: "itcbrasil-b45c6.firebaseapp.com",
+            projectId: "itcbrasil-b45c6",
+            storageBucket: "itcbrasil-b45c6.appspot.com", // Corrigido para .appspot.com
+            messagingSenderId: "544074200281",
+            appId: "1:544074200281:web:7502259d58e49a60483ac8"
+        };
+        const appId = firebaseConfig.projectId; // Usa o projectId como appId
+        
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
         } catch (e) {
             console.error("Erro ao inicializar o Firebase:", e);
-            scanResultEl.textContent = "Erro de configuração. Verifique o console.";
-            scanResultEl.classList.add('scan-error');
+            scanResultEl.textContent = "Erro de configuração.";
         }
 
         // --- FUNÇÕES PRINCIPAIS ---
+        function generateNotebookListForLocation(locationId) {
+            if (!locationId) return [];
+            const list = [];
+
+            if (locationId.startsWith('BSBIA')) {
+                for (let i = 1; i <= 100; i++) {
+                    list.push(`${locationId}-EST${String(i).padStart(2, '0')}`);
+                }
+                for (let i = 1; i <= 5; i++) {
+                    list.push(`${locationId}-PROF${String(i).padStart(2, '0')}`);
+                }
+            } else if (locationId.startsWith('SPV')) {
+                for (let i = 1; i <= 8; i++) {
+                    list.push(`${locationId}-EST${String(i).padStart(2, '0')}`);
+                }
+                list.push(`${locationId}-REC01`, `${locationId}-REC02`);
+                list.push(`${locationId}-CONTABIL`);
+                list.push(`${locationId}-ADV`);
+            } else if (locationId === 'CODHAB01') {
+                for (let i = 1; i <= 8; i++) {
+                    list.push(`${locationId}-PA${String(i).padStart(2, '0')}`);
+                }
+                list.push(`${locationId}-REC01`, `${locationId}-REC02`);
+                list.push(`${locationId}-GESTÃO`);
+            }
+            
+            return list;
+        }
 
         function getTodayDocId() {
             const today = new Date();
@@ -171,38 +229,59 @@
             return `${year}-${month}-${day}`;
         }
 
+        function formatTimestamp(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return date.toLocaleString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+        
+        function updateClock() {
+            const now = new Date();
+            const formattedTime = now.toLocaleString('pt-BR', {
+                dateStyle: 'full',
+                timeStyle: 'medium'
+            });
+            clockEl.textContent = formattedTime.charAt(0).toUpperCase() + formattedTime.slice(1);
+        }
+
         function updateUI() {
             scannedListEl.innerHTML = '';
             missingListEl.innerHTML = '';
 
-            const missingItems = [];
-            const sortedScannedItems = Array.from(scannedItems).sort((a, b) => {
-                return parseInt(a.replace(QR_PREFIX, '')) - parseInt(b.replace(QR_PREFIX, ''));
-            });
+            const scannedIds = new Set(scannedEntries.map(entry => entry.id));
 
             masterNotebookList.forEach(notebookId => {
-                const itemEl = document.createElement('div');
-                itemEl.textContent = `Notebook ${notebookId.replace(QR_PREFIX, '')}`;
-                itemEl.className = 'p-2 my-1 rounded-md text-sm';
-
-                if (scannedItems.has(notebookId)) {
-                    // This part is handled by the sorted loop below
-                } else {
-                    itemEl.classList.add('status-missing');
-                    missingItems.push(itemEl);
+                if (!scannedIds.has(notebookId)) {
+                    const itemEl = document.createElement('div');
+                    itemEl.textContent = notebookId;
+                    itemEl.className = 'p-2 my-1 rounded-md text-sm status-missing';
+                    missingListEl.appendChild(itemEl);
                 }
             });
             
-            sortedScannedItems.forEach(notebookId => {
-                 const itemEl = document.createElement('div');
-                 itemEl.textContent = `Notebook ${notebookId.replace(QR_PREFIX, '')}`;
-                 itemEl.className = 'p-2 my-1 rounded-md text-sm status-scanned';
-                 scannedListEl.appendChild(itemEl);
+            const sortedScannedEntries = [...scannedEntries].sort((a, b) => a.id.localeCompare(b.id));
+            sortedScannedEntries.forEach(entry => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'p-2 my-1 rounded-md text-sm status-scanned flex justify-between items-center flex-wrap';
+                
+                const idSpan = document.createElement('span');
+                idSpan.textContent = entry.id;
+
+                const detailsSpan = document.createElement('span');
+                detailsSpan.className = 'text-xs text-green-800 font-mono';
+                const technicianName = entry.technician ? entry.technician.split(' ')[0] : 'N/A';
+                detailsSpan.textContent = `${formatTimestamp(entry.timestamp)} (${technicianName})`;
+
+                itemEl.appendChild(idSpan);
+                itemEl.appendChild(detailsSpan);
+                scannedListEl.appendChild(itemEl);
             });
 
-            missingListEl.append(...missingItems);
-
-            const scannedCount = scannedItems.size;
+            const scannedCount = scannedIds.size;
             const missingCount = TOTAL_NOTEBOOKS - scannedCount;
 
             scannedCountEl.textContent = scannedCount;
@@ -211,58 +290,59 @@
             missingListCountEl.textContent = missingCount;
         }
 
-        function setupRealtimeListener() {
+        function setupRealtimeListener(locationId) {
             if (unsubscribe) unsubscribe(); 
-            if (!isAuthReady || !db) return;
+            if (!isAuthReady || !db || !locationId) return;
 
             const todayDocId = getTodayDocId();
-            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+            const docPath = `artifacts/${appId}/public/data/locations/${locationId}/notebooks/${todayDocId}`;
+            const docRef = doc(db, docPath);
 
             unsubscribe = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    scannedItems = new Set(data.scannedItems || []);
-                } else {
-                    scannedItems = new Set();
-                }
+                scannedEntries = docSnap.exists() ? docSnap.data().scannedEntries || [] : [];
                 updateUI();
             }, (error) => {
                 console.error("Erro ao ouvir mudanças:", error);
-                scanResultEl.textContent = "Erro de conexão com o banco de dados.";
-                scanResultEl.classList.add('scan-error');
+                showFeedback("Erro de conexão com o banco de dados.", 'error');
             });
         }
 
         async function handleSuccessfulScan(decodedText) {
-            if (!isAuthReady) {
-                showFeedback('Aguardando autenticação...', 'duplicate');
+            if (!isAuthReady || !selectedLocationId || !selectedTechnicianName) {
+                showFeedback('Selecione o local e o técnico.', 'error');
                 return;
             }
 
-            if (!decodedText.startsWith(QR_PREFIX)) {
-                showFeedback('QR Code inválido!', 'error');
+            if (!masterNotebookList.includes(decodedText)) {
+                showFeedback(`QR Code inválido para ${selectedLocationId}!`, 'error');
                 return;
             }
 
-            if (scannedItems.has(decodedText)) {
-                showFeedback(`Notebook ${decodedText.replace(QR_PREFIX, '')} já escaneado.`, 'duplicate');
+            const isAlreadyScanned = scannedEntries.some(entry => entry.id === decodedText);
+            if (isAlreadyScanned) {
+                showFeedback(`${decodedText} já escaneado.`, 'duplicate');
                 return;
             }
 
             const synth = new Tone.Synth().toDestination();
             synth.triggerAttackRelease("C5", "8n");
-
-            showFeedback(`Notebook ${decodedText.replace(QR_PREFIX, '')} registrado!`, 'success');
+            showFeedback(`${decodedText} registrado!`, 'success');
             
             const todayDocId = getTodayDocId();
-            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+            const docPath = `artifacts/${appId}/public/data/locations/${selectedLocationId}/notebooks/${todayDocId}`;
+            const docRef = doc(db, docPath);
             
-            const newScannedList = Array.from(scannedItems).concat(decodedText);
+            const newEntry = { 
+                id: decodedText, 
+                timestamp: new Date().toISOString(),
+                technician: selectedTechnicianName 
+            };
+            const newScannedEntries = [...scannedEntries, newEntry];
 
             try {
-                await setDoc(docRef, { scannedItems: newScannedList }, { merge: true });
+                await setDoc(docRef, { scannedEntries: newScannedEntries });
             } catch (error) {
-                console.error("Erro ao salvar o item escaneado:", error);
+                console.error("Erro ao salvar o item:", error);
                 showFeedback('Erro ao salvar!', 'error');
             }
         }
@@ -277,77 +357,92 @@
         }
 
         async function resetCount() {
-            if (!isAuthReady) {
-                showFeedback('Aguardando autenticação...', 'duplicate');
-                return;
-            }
-            // CORREÇÃO: Removido window.confirm() que não é permitido.
-            // A ação agora é imediata. Para reintroduzir a confirmação,
-            // seria necessário um modal customizado.
+            if (!isAuthReady || !selectedLocationId) return;
+            
             const todayDocId = getTodayDocId();
-            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+            const docPath = `artifacts/${appId}/public/data/locations/${selectedLocationId}/notebooks/${todayDocId}`;
+            const docRef = doc(db, docPath);
             try {
-                await setDoc(docRef, { scannedItems: [] });
+                await setDoc(docRef, { scannedEntries: [] });
                 showFeedback('Contagem reiniciada com sucesso!', 'success');
             } catch (error) {
-                console.error("Erro ao reiniciar a contagem:", error);
+                console.error("Erro ao reiniciar:", error);
                 showFeedback('Erro ao reiniciar!', 'error');
             }
         }
         
-        // --- INICIALIZAÇÃO DO SCANNER ---
-        const html5QrCode = new Html5Qrcode("reader");
-        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-            handleSuccessfulScan(decodedText);
-        };
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        // --- INICIALIZAÇÃO DO APP ---
+        function populateSelectors() {
+            LOCATIONS.sort((a, b) => a.name.localeCompare(b.name)).forEach(loc => {
+                const option = document.createElement('option');
+                option.value = loc.id;
+                option.textContent = loc.name;
+                locationSelector.appendChild(option);
+            });
+            TECHNICIANS.forEach(tech => {
+                const option = document.createElement('option');
+                option.value = tech;
+                option.textContent = tech;
+                technicianSelector.appendChild(option);
+            });
+        }
 
+        function checkSelections() {
+            selectedLocationId = locationSelector.value;
+            selectedTechnicianName = technicianSelector.value;
+
+            if (selectedLocationId && selectedTechnicianName) {
+                const selectedLocation = LOCATIONS.find(l => l.id === selectedLocationId);
+                mainTitle.textContent = `Inventário - ${selectedLocation.name}`;
+                
+                masterNotebookList = generateNotebookListForLocation(selectedLocationId);
+                TOTAL_NOTEBOOKS = masterNotebookList.length;
+
+                mainContent.classList.remove('disabled');
+                setupRealtimeListener(selectedLocationId);
+            } else {
+                mainTitle.textContent = 'Inventário de Notebooks';
+                mainContent.classList.add('disabled');
+                if (unsubscribe) unsubscribe();
+                scannedEntries = [];
+                masterNotebookList = [];
+                TOTAL_NOTEBOOKS = 0;
+                updateUI();
+            }
+        }
+
+        locationSelector.addEventListener('change', checkSelections);
+        technicianSelector.addEventListener('change', checkSelections);
+
+        const html5QrCode = new Html5Qrcode("reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
         function startScanner() {
-             html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+             html5QrCode.start({ facingMode: "environment" }, config, handleSuccessfulScan)
                 .catch(err => {
                     console.error("Não foi possível iniciar o scanner", err);
-                    scanResultEl.textContent = "Erro ao iniciar a câmera. Verifique as permissões.";
-                    scanResultEl.classList.add('scan-error');
+                    mainContent.innerHTML = `<p class="text-red-500 text-center">Erro ao iniciar a câmera. Verifique as permissões e recarregue a página.</p>`;
                 });
         }
         
-        // --- AUTENTICAÇÃO E EXECUÇÃO ---
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 userId = user.uid;
                 isAuthReady = true;
-                console.log("Usuário autenticado:", userId);
-                setupRealtimeListener();
-                if (!html5QrCode.isScanning) {
-                    startScanner();
-                }
-            } else {
-                isAuthReady = false;
-                userId = null;
-                console.log("Usuário não autenticado.");
-                if (unsubscribe) unsubscribe();
+                startScanner();
             }
         });
 
-        // CORREÇÃO: Lógica de autenticação atualizada para usar token customizado se disponível.
-        (async () => {
-            try {
-                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (token) {
-                    await signInWithCustomToken(auth, token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                 console.error("Erro na autenticação:", error);
-                 scanResultEl.textContent = "Erro de autenticação.";
-                 scanResultEl.classList.add('scan-error');
-            }
-        })();
+        // O app não precisa mais de __initial_auth_token, pois as chaves estão no código.
+        signInAnonymously(auth).catch((error) => {
+            console.error("Erro na autenticação anônima:", error);
+        });
 
         resetButton.addEventListener('click', resetCount);
-
-        updateUI();
+        populateSelectors();
+        updateUI(); 
+        
+        updateClock();
+        setInterval(updateClock, 1000);
     </script>
 </body>
 </html>
