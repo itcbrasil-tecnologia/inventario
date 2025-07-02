@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventário de Notebooks com QR Code</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #reader {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .status-scanned {
+            background-color: #dcfce7;
+            color: #166534;
+            border-left: 4px solid #22c55e;
+        }
+        .status-missing {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+        .scan-feedback {
+            transition: all 0.3s ease-in-out;
+        }
+        .scan-success {
+            background-color: #4ade80 !important;
+            color: white !important;
+            transform: scale(1.05);
+        }
+        .scan-duplicate {
+            background-color: #facc15 !important;
+            color: #422006 !important;
+            transform: scale(1.05);
+        }
+        .scan-error {
+            background-color: #f87171 !important;
+            color: white !important;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto max-w-4xl p-4">
+
+        <!-- Header -->
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-slate-900">Inventário de Notebooks</h1>
+            <p class="text-slate-600 mt-1">Escaneie o QR Code de cada notebook para fazer a contagem.</p>
+        </header>
+
+        <!-- Scanner and Status Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Left Column: Scanner -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-bold mb-4">Escanear QR Code</h2>
+                <div id="reader" class="w-full aspect-square max-w-sm mx-auto"></div>
+                <div id="scan-result" class="mt-4 p-3 text-center rounded-md font-semibold scan-feedback">
+                    Aguardando escaneamento...
+                </div>
+                <div class="mt-4 text-center">
+                    <button id="reset-button" class="bg-red-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-700 transition-colors">
+                        Reiniciar Contagem do Dia
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Status Lists -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <!-- Counters -->
+                <div class="grid grid-cols-2 gap-4 mb-4 text-center">
+                    <div>
+                        <p class="text-sm text-slate-500">ESCANEDADOS</p>
+                        <p id="scanned-count" class="text-4xl font-bold text-green-600">0</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-500">FALTANDO</p>
+                        <p id="missing-count" class="text-4xl font-bold text-red-600">100</p>
+                    </div>
+                </div>
+
+                <!-- Lists -->
+                <div class="grid grid-cols-1 gap-4">
+                    <!-- Missing List -->
+                    <div>
+                        <h3 class="font-bold mb-2 text-red-700">Faltando (<span id="missing-list-count">100</span>)</h3>
+                        <div id="missing-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border">
+                            <!-- Missing items will be populated here -->
+                        </div>
+                    </div>
+                    <!-- Scanned List -->
+                    <div>
+                        <h3 class="font-bold mb-2 text-green-700">Escaneados (<span id="scanned-list-count">0</span>)</h3>
+                        <div id="scanned-list" class="h-48 overflow-y-auto bg-slate-50 p-2 rounded-md border">
+                            <!-- Scanned items will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // Firebase v11.6.1
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIGURAÇÃO ---
+        const TOTAL_NOTEBOOKS = 100;
+        const QR_PREFIX = 'notebook-inv-';
+        
+        // --- ELEMENTOS DA UI ---
+        const scannedCountEl = document.getElementById('scanned-count');
+        const missingCountEl = document.getElementById('missing-count');
+        const scannedListEl = document.getElementById('scanned-list');
+        const missingListEl = document.getElementById('missing-list');
+        const scannedListCountEl = document.getElementById('scanned-list-count');
+        const missingListCountEl = document.getElementById('missing-list-count');
+        const scanResultEl = document.getElementById('scan-result');
+        const resetButton = document.getElementById('reset-button');
+
+        // --- ESTADO DA APLICAÇÃO ---
+        let masterNotebookList = [];
+        for (let i = 1; i <= TOTAL_NOTEBOOKS; i++) {
+            masterNotebookList.push(`${QR_PREFIX}${i}`);
+        }
+        let scannedItems = new Set();
+        let db, auth, userId, unsubscribe;
+        let isAuthReady = false;
+
+        // --- INICIALIZAÇÃO DO FIREBASE ---
+        // CORREÇÃO: Removido '...' que causava erro de sintaxe.
+        const firebaseConfig = {
+    apiKey: "AIzaSyADiMqW9aC2rpFD2jIbufwcV2mCwPk0vWU",
+    authDomain: "itcbrasil-b45c6.firebaseapp.com",
+    projectId: "itcbrasil-b45c6",
+    storageBucket: "itcbrasil-b45c6.firebasestorage.app",
+    messagingSenderId: "544074200281",
+    appId: "1:544074200281:web:7502259d58e49a60483ac8"
+  };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Erro ao inicializar o Firebase:", e);
+            scanResultEl.textContent = "Erro de configuração. Verifique o console.";
+            scanResultEl.classList.add('scan-error');
+        }
+
+        // --- FUNÇÕES PRINCIPAIS ---
+
+        function getTodayDocId() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function updateUI() {
+            scannedListEl.innerHTML = '';
+            missingListEl.innerHTML = '';
+
+            const missingItems = [];
+            const sortedScannedItems = Array.from(scannedItems).sort((a, b) => {
+                return parseInt(a.replace(QR_PREFIX, '')) - parseInt(b.replace(QR_PREFIX, ''));
+            });
+
+            masterNotebookList.forEach(notebookId => {
+                const itemEl = document.createElement('div');
+                itemEl.textContent = `Notebook ${notebookId.replace(QR_PREFIX, '')}`;
+                itemEl.className = 'p-2 my-1 rounded-md text-sm';
+
+                if (scannedItems.has(notebookId)) {
+                    // This part is handled by the sorted loop below
+                } else {
+                    itemEl.classList.add('status-missing');
+                    missingItems.push(itemEl);
+                }
+            });
+            
+            sortedScannedItems.forEach(notebookId => {
+                 const itemEl = document.createElement('div');
+                 itemEl.textContent = `Notebook ${notebookId.replace(QR_PREFIX, '')}`;
+                 itemEl.className = 'p-2 my-1 rounded-md text-sm status-scanned';
+                 scannedListEl.appendChild(itemEl);
+            });
+
+            missingListEl.append(...missingItems);
+
+            const scannedCount = scannedItems.size;
+            const missingCount = TOTAL_NOTEBOOKS - scannedCount;
+
+            scannedCountEl.textContent = scannedCount;
+            missingCountEl.textContent = missingCount;
+            scannedListCountEl.textContent = scannedCount;
+            missingListCountEl.textContent = missingCount;
+        }
+
+        function setupRealtimeListener() {
+            if (unsubscribe) unsubscribe(); 
+            if (!isAuthReady || !db) return;
+
+            const todayDocId = getTodayDocId();
+            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+
+            unsubscribe = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    scannedItems = new Set(data.scannedItems || []);
+                } else {
+                    scannedItems = new Set();
+                }
+                updateUI();
+            }, (error) => {
+                console.error("Erro ao ouvir mudanças:", error);
+                scanResultEl.textContent = "Erro de conexão com o banco de dados.";
+                scanResultEl.classList.add('scan-error');
+            });
+        }
+
+        async function handleSuccessfulScan(decodedText) {
+            if (!isAuthReady) {
+                showFeedback('Aguardando autenticação...', 'duplicate');
+                return;
+            }
+
+            if (!decodedText.startsWith(QR_PREFIX)) {
+                showFeedback('QR Code inválido!', 'error');
+                return;
+            }
+
+            if (scannedItems.has(decodedText)) {
+                showFeedback(`Notebook ${decodedText.replace(QR_PREFIX, '')} já escaneado.`, 'duplicate');
+                return;
+            }
+
+            const synth = new Tone.Synth().toDestination();
+            synth.triggerAttackRelease("C5", "8n");
+
+            showFeedback(`Notebook ${decodedText.replace(QR_PREFIX, '')} registrado!`, 'success');
+            
+            const todayDocId = getTodayDocId();
+            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+            
+            const newScannedList = Array.from(scannedItems).concat(decodedText);
+
+            try {
+                await setDoc(docRef, { scannedItems: newScannedList }, { merge: true });
+            } catch (error) {
+                console.error("Erro ao salvar o item escaneado:", error);
+                showFeedback('Erro ao salvar!', 'error');
+            }
+        }
+
+        function showFeedback(message, type) {
+            scanResultEl.textContent = message;
+            scanResultEl.classList.remove('scan-success', 'scan-duplicate', 'scan-error');
+            scanResultEl.classList.add(`scan-${type}`);
+            setTimeout(() => {
+                scanResultEl.classList.remove('scan-success', 'scan-duplicate', 'scan-error');
+            }, 2000);
+        }
+
+        async function resetCount() {
+            if (!isAuthReady) {
+                showFeedback('Aguardando autenticação...', 'duplicate');
+                return;
+            }
+            // CORREÇÃO: Removido window.confirm() que não é permitido.
+            // A ação agora é imediata. Para reintroduzir a confirmação,
+            // seria necessário um modal customizado.
+            const todayDocId = getTodayDocId();
+            const docRef = doc(db, `artifacts/${appId}/public/data/notebooks/${todayDocId}`);
+            try {
+                await setDoc(docRef, { scannedItems: [] });
+                showFeedback('Contagem reiniciada com sucesso!', 'success');
+            } catch (error) {
+                console.error("Erro ao reiniciar a contagem:", error);
+                showFeedback('Erro ao reiniciar!', 'error');
+            }
+        }
+        
+        // --- INICIALIZAÇÃO DO SCANNER ---
+        const html5QrCode = new Html5Qrcode("reader");
+        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+            handleSuccessfulScan(decodedText);
+        };
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        function startScanner() {
+             html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+                .catch(err => {
+                    console.error("Não foi possível iniciar o scanner", err);
+                    scanResultEl.textContent = "Erro ao iniciar a câmera. Verifique as permissões.";
+                    scanResultEl.classList.add('scan-error');
+                });
+        }
+        
+        // --- AUTENTICAÇÃO E EXECUÇÃO ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                isAuthReady = true;
+                console.log("Usuário autenticado:", userId);
+                setupRealtimeListener();
+                if (!html5QrCode.isScanning) {
+                    startScanner();
+                }
+            } else {
+                isAuthReady = false;
+                userId = null;
+                console.log("Usuário não autenticado.");
+                if (unsubscribe) unsubscribe();
+            }
+        });
+
+        // CORREÇÃO: Lógica de autenticação atualizada para usar token customizado se disponível.
+        (async () => {
+            try {
+                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (token) {
+                    await signInWithCustomToken(auth, token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                 console.error("Erro na autenticação:", error);
+                 scanResultEl.textContent = "Erro de autenticação.";
+                 scanResultEl.classList.add('scan-error');
+            }
+        })();
+
+        resetButton.addEventListener('click', resetCount);
+
+        updateUI();
+    </script>
+</body>
+</html>
