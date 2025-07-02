@@ -189,6 +189,9 @@
             'João Marcos', 'José Frederico', 'Lucas Andrade', 'Lucas Veras', 'Mateus Fernandes', 'Matheus Santos', 'Paulo Henrique'
         ];
         
+        const TELEGRAM_BOT_TOKEN = '8017317709:AAHtksyAYXdpnoFHVMLlSpJsBUs9sjeYs5U';
+        const TELEGRAM_CHAT_ID = '-4906044430';
+        
         // --- ELEMENTOS DA UI ---
         const locationSelector = document.getElementById('location-selector');
         const technicianSelector = document.getElementById('technician-selector');
@@ -212,7 +215,6 @@
         const actionButtons = document.getElementById('action-buttons');
         const summaryModal = document.getElementById('summary-modal');
         const closeSummaryButton = document.getElementById('close-summary-button');
-
 
         // --- ESTADO DA APLICAÇÃO ---
         let scannedEntries = [];
@@ -256,7 +258,7 @@
                 list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-CONTABIL`, `${locationId}-ADV`);
             } else if (locationId === 'CODHAB01') {
                 for (let i = 1; i <= 8; i++) list.push(`${locationId}-PA${String(i).padStart(2, '0')}`);
-                list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-GESTÃO`);
+                list.push(`${locationId}-REC01`, `${locationId}-REC02`, `${locationId}-GESTAO`); // CORREÇÃO: Removido o til
             }
             return list;
         }
@@ -434,10 +436,63 @@
 
                 confirmationModal.classList.add('hidden');
                 summaryModal.classList.remove('hidden');
+                
+                sendTelegramNotification(locationName, selectedTechnicianName, finalizationTimestamp, scannedIds.size, missingItems);
 
             } catch (error) {
                 console.error("Erro ao fechar a contagem:", error);
                 showFeedback('Erro ao fechar a contagem!', 'error');
+            }
+        }
+
+        async function sendTelegramNotification(location, technician, timestamp, scannedCount, missingItems) {
+            if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === 'SEU_TOKEN_AQUI' || !TELEGRAM_CHAT_ID || TELEGRAM_CHAT_ID === 'SEU_CHAT_ID_AQUI') {
+                console.warn("Token do Bot ou Chat ID do Telegram não configurados. Mensagem não enviada.");
+                return;
+            }
+            
+            const formattedTimestamp = timestamp.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+            let messageText = `*Resumo da Conferência*\n\n`;
+            messageText += `*Local:* \`${location}\`\n`;
+            messageText += `*Técnico:* \`${technician}\`\n`;
+            messageText += `*Data:* \`${formattedTimestamp}\`\n\n`;
+            messageText += `*Escaneados:* ${scannedCount}\n`;
+            messageText += `*Faltantes:* ${missingItems.length}\n\n`;
+            
+            if (missingItems.length > 0) {
+                messageText += `*Itens Não Escaneados:*\n`;
+                messageText += "```\n";
+                missingItems.forEach(item => {
+                    messageText += `- ${item}\n`;
+                });
+                messageText += "```";
+            } else {
+                messageText += `✅ *Nenhum item faltante\\!*`;
+            }
+
+            const escapeMarkdown = (text) => text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+            const finalMessage = escapeMarkdown(messageText);
+
+            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CHAT_ID,
+                        text: finalMessage,
+                        parse_mode: 'MarkdownV2'
+                    })
+                });
+                const result = await response.json();
+                if (!result.ok) {
+                    console.error("Erro ao enviar mensagem para o Telegram:", result.description);
+                } else {
+                    console.log("Mensagem enviada para o Telegram com sucesso.");
+                }
+            } catch (error) {
+                console.error("Falha na requisição para o Telegram:", error);
             }
         }
 
@@ -464,12 +519,9 @@
             if (selectedLocationId && selectedTechnicianName) {
                 const selectedLocation = LOCATIONS.find(l => l.id === selectedLocationId);
                 mainTitle.textContent = `Inventário - ${selectedLocation.name}`;
-                
-                // CORREÇÃO: A lógica para gerar a lista e atualizar a UI foi restaurada aqui.
                 masterNotebookList = generateNotebookListForLocation(selectedLocationId);
                 TOTAL_NOTEBOOKS = masterNotebookList.length;
-                updateUI(); // Atualiza a UI com a nova lista mestra
-                
+                updateUI();
                 mainContent.classList.remove('disabled');
                 setupRealtimeListener(selectedLocationId);
             } else {
